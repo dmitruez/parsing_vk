@@ -10,24 +10,73 @@ from rich.console import Console
 from rich.table import Table
 
 
+
 cities = {
-	"Москва": 1,
-	"Санкт-Петербург": 2,
-	"Волгоград": 10,
-	"Владивосток": 37,
-	"Воронеж": 42,
-	"Екатеринбург": 49,
-	"Казань": 60,
-	"Калининград": 61,
-	"Краснодар": 72,
-	"Красноярск": 73,
-	"Нижний Новгород": 95,
-	"Новосибирск": 99,
-	"Омск": 104,
-	"Пермь": 110,
-	"Ростов-на-Дону": 119,
-	"Уфа": 151
+	1: "Россия",
+	2: "Украина",
+	3: "Беларусь",
+	4: "Казахстан",
+	5: "Азейбарджан",
+	6: "Армения",
+	7: "Грузия",
+	11: "Кыргызстан",
+	15: "Молдова",
+	18: "Узбекистан"
 	}
+
+
+def get_wall_posts(vk, link, group_id):
+	try:
+		vk.groups.join(group_id=group_id)
+	except Exception as e:
+		print(f"Что то пошло не так... пробуем снова: {e}")
+	if "vk.com" in link:
+		domain = link.replace("https://vk.com/", "")
+	else:
+		domain = link.replace("https://vk.ru/", "")
+	wall_all = vk.wall.get(domain=domain, count=100)
+	count = len(list(filter(lambda m: m.get("comments") is not None, wall_all["items"])))
+	post_ids = []
+	if count == 0:
+		return None
+	wall = vk.wall.get(domain=domain, count=10)
+	print(f"Комментим в группу: https://vk.com/public{group_id}")
+	for post in wall["items"]:
+		if post.get("comments"):
+			post_ids.append(post["id"])
+	return post_ids
+	
+
+
+
+
+
+
+def get_with_photo_ids(vk, group_id):
+	offset = 0
+	banned = 0
+	applied = 0
+	ids = []
+	all_members = vk.groups.getMembers(group_id=group_id)
+	count = all_members["count"]
+	os.system('cls')
+	
+	while offset < count:
+		members = vk.groups.getMembers(group_id=group_id, offset=offset, fields="photo_100")
+		for member in members.get("items"):
+			if "deactivated" and member.get("photo_100").endswith(".png"):
+				banned += 1
+			else:
+				if not member.get("photo_100").endswith(".png"):
+					applied += 1
+					user_id = member["id"]
+					print(user_id)
+					ids.append(user_id)
+		offset += 1000
+	
+	return ids, banned, applied
+
+
 
 
 def get_group_id_by_key(vk):
@@ -36,36 +85,57 @@ def get_group_id_by_key(vk):
 		to_print += f'{key} - {value} | '
 	print(to_print)
 	while True:
-		try:
-			city_id = int(input("Напишите номер желаемого города:"))
+		what1 = int(input("\nПарсинг групп по ключевому слову\n\n1 - Глобальный поиск\n2 - Выбрать страну\n\nВвод:"))
+		if what1 == 2:
+			
+			country_id = int(input("\nНапишите номер желаемой страны:"))
+			what = int(input("\n\n1 - Делать парсинг по всей стране\n2 - Выбрать город\n\nВвод:"))
+			if what == 2:
+				cit = vk.database.getCities(country_id=country_id)["items"]
+				to_print = '| '
+				for city in cit:
+					to_print += f'{city["id"]} - {city["title"]} | '
+				print(to_print)
+				city_id = int(input("Напишите номер желаемого города:"))
+				q = input("Введите ключевое слово:")
+				groups = vk.groups.search(q=q, city_id=city_id, count=100, sort=6)
+			else:
+				q = input("Введите ключевое слово:")
+				groups = vk.groups.search(q=q, country_id=country_id, count=100, sort=6)
+		else:
 			q = input("Введите ключевое слово:")
-			groups = vk.groups.search(q=q, city_id=city_id, count=20)
+			groups = vk.groups.search(q=q, count=100, sort=6)
+		if len(groups) != 0:
 			all_groups = groups.get("items")
-			for num, group in enumerate(all_groups):
-				count = vk.groups.getMembers(group_id=group.get("id")).get("count")
-				print(f'{num + 1}. {group.get("name")} | кол-во чел.: {count} | https://vk.com/{group.get("screen_name")}')
-			
-			group_num = int(input("Напишите номер нужной вам группы:")) - 1
-			group_id = all_groups[group_num]["id"]
-			os.system('cls')
-			count_group = vk.groups.getMembers(group_id=group_id)
-			print(
-				f"Выбрана группа: {all_groups[group_num]['name']} | кол-во чел.: {count_group} | https://vk.com/"
-				f"{all_groups[group_num].get('screen_name')}"
-				)
-			
-			curnt_group = vk.groups.getById(group_id=group_id)
-			
-			group_all_info = curnt_group[0]  # выводит всю информацию о группе
-			group_id = group_all_info['id']  # выводит айди
-			break
-		except Exception as e:
-			print(f"произошла ошибка: {e}")
+			with open("link_group.txt", "a") as f:
+				for num, group in enumerate(all_groups):
+					try:
+						href = f"https://vk.com/{group['screen_name']}"
+						f.write(f"{href}\n")
+						name = f"{num + 1}. {group['name']}"
+						print(f'{name:<55} | {href}')
+					except Exception as e:
+						print(f"Группа со скрытыми участниками, пропускаю... {e}")
+				group_num = int(input("\nНапишите номер нужной вам группы:")) - 1
+				group_id = all_groups[group_num]["id"]
+				os.system('cls')
+				count_group = vk.groups.getMembers(group_id=group_id)["count"]
+				print(
+					f"Выбрана группа: {all_groups[group_num]['name']} | кол-во чел.: {count_group} | https://vk.com/"
+					f"{all_groups[group_num].get('screen_name')}"
+					)
+				
+				curnt_group = vk.groups.getById(group_id=group_id)
+				
+				group_all_info = curnt_group[0]  # выводит всю информацию о группе
+				group_id = group_all_info['id']  # выводит айди
+				break
+		else:
+			print("По этому запросу не нашлось ни одной группы( ")
 	return group_id
 
 
 def get_group_id_by_link(vk, link):
-	
 	try:
 		if "vk.com" in link:
 			link_replace = link.replace('https://vk.com/', '')
@@ -243,14 +313,16 @@ def get_city_ids(vk, group_id):
 
 
 def get_users_with_parametrs(vk, group_id, action):
-	if action == 4:
-		ids, banned, applied = get_city_ids(vk, group_id)
-	elif action == 2:
+	if action == 2:
 		ids, banned, applied = get_online_ids(vk, group_id)
 	elif action == 3:
 		ids, banned, applied = get_sex_ids(vk, group_id)
+	elif action == 4:
+		ids, banned, applied = get_city_ids(vk, group_id)
 	elif action == 5:
 		ids, banned, applied = get_age_ids(vk, group_id)
+	elif action == 6:
+		ids, banned, applied = get_with_photo_ids(vk, group_id)
 	else:
 		ids, banned, applied = get_all_ids(vk, group_id)
 	
@@ -311,11 +383,9 @@ def func_message_send(vk, id_user_all):  # по лс юзерам
 			'Введите текст для отправки сообщения:\n\nтекст 1 | текст 2 | текст 3\nБудет выбран один случайный текст\n\nВведите текст, для рандомных сообщений вставьте символ |:'
 			)
 		
-		i_1 = input('Введите время от скольки рандомизировать время в сек:')
-		i_2 = input('Введите время до скольки рандомизировать время в сек:')
+		i_1 = int(input('Введите время от скольки рандомизировать время в сек:'))
+		i_2 = int(input('Введите время до скольки рандомизировать время в сек:'))
 		
-		i_1 = int(i_1)
-		i_2 = int(i_2)
 		
 		for user_id in id_user_all:
 			try:
@@ -334,64 +404,61 @@ def func_message_send(vk, id_user_all):  # по лс юзерам
 		menu(vk)
 
 
-def message_group(vk, list_id_group):  # отправка в лс группы
-	os.system('cls')
+def message_group(vk, list_id_group):  #
 	
-	photo_used = input('Использовать фото?\n\n1 - да\n2 - нет\n3 - отмена рассылки по группам\n\nВведите цифру:')
-	photo_used = int(photo_used)
-	if photo_used == 1:
-		photo_url = input('вставьте ссылку на фото:')
-		message_text = input(
-			'Введите текст для отправки сообщения:\n\nтекст 1 | текст 2 | текст 3\nБудет выбран один случайный текст\n\nВведите текст, для рандомных сообщений вставьте символ |:'
-			)
-		
-		i_1 = input('Введите время от скольки рандомизировать время в сек:')
-		i_2 = input('Введите время до скольки рандомизировать время в сек:')
-		
-		i_1 = int(i_1)
-		i_2 = int(i_2)
-		
-		for group_message_send in list_id_group:
-			try:
-				time_random = random.randint(i_1, i_2)
-				print(f'Время задержки составляет: {time_random}')
-				time.sleep(time_random)
-				
-				word = random.choice(message_text.split(' | '))
-				vk.messages.send(peer_id=-group_message_send, random_id=0, message=word, attachment=photo_url)
-				print(f'user_id: {group_message_send} message: {word}\nУспешно!')
-			except Exception as ex:
-				print('Ошибка, пропускаю группу...', ex)
-		menu(vk)
+	message_text = input(
+		'Введите текст для отправки сообщения:\n\nтекст 1 | текст 2 | текст 3\n\nБудет выбран один случайный текст:'
+		)
 	
-	if photo_used == 2:
-		message_text = input(
-			'Введите текст для отправки сообщения:\n\nтекст 1 | текст 2 | текст 3\nБудет выбран один случайный текст\n\nВведите текст, для рандомных сообщений вставьте символ | :'
-			)
-		
-		i_1 = input('Введите время от скольки рандомизировать время в сек:')
-		i_2 = input('Введите время до скольки рандомизировать время в сек:')
-		
-		i_1 = int(i_1)
-		i_2 = int(i_2)
-		
-		for group_message_send in list_id_group:
-			try:
-				time_random = random.randint(i_1, i_2)
-				print(f'Время задержки составляет: {time_random}')
-				time.sleep(time_random)
-				
-				word = random.choice(message_text.split(' | '))
-				vk.messages.send(peer_id=-group_message_send, random_id=0, message=word)
-				print(f'user_id: {group_message_send} message: {word}\nУспешно!')
-			except Exception as ex:
-				print('Ошибка, пропускаю группу...', ex)
-		menu(vk)
+	i_1 = int(input('Введите время от скольки рандомизировать время в сек:'))
+	i_2 = int(input('Введите время до скольки рандомизировать время в сек:'))
 	
-	if photo_used == 3:
-		menu(vk)
+	for group_message_send in list_id_group:
+		try:
+			time_random = random.randint(i_1, i_2)
+			print(f'Время задержки составляет: {time_random}')
+			time.sleep(time_random)
+			
+			word = random.choice(message_text.split(' | '))
+			vk.messages.send(peer_id=-group_message_send, random_id=0, message=word)
+			print(f'группа: https://vk.com/public{group_message_send} сообщение: {word}\nУспешно!')
+		except Exception as ex:
+			print('Ошибка, пропускаю группу...', ex)
+	menu(vk)
 
 
+
+def message_group_comments(vk, list_links_ids_group):  # отправка коментариев под посты
+	print("\n\tВ эти группы будут отправлены коментарии под посты\n")
+	
+	what = int(input("\n1 - Ввести текст\n2 - Выйти из рассылки\n\nВвод:"))
+	if what == 1:
+		message_text = input(
+			'Введите текст для отправки сообщения:\nтекст 1 | текст 2 | текст 3\nБудет выбран один случайный текст:'
+			)
+		
+		for link, group_id in list_links_ids_group:
+			post_ids = get_wall_posts(vk, link, group_id)
+			if post_ids:
+				for post_id in post_ids:
+					try:
+						word = random.choice(message_text.split(' | '))
+						vk.wall.createComment(owner_id=-group_id, post_id=post_id, message=word)
+						print(f'пост : https://vk.com/public{group_id}?w=wall-{group_id}_{post_id} сообщение: '
+						      f'{word}\nУспешно!\n')
+						if not post_id == post_ids[-1]:
+							time.sleep(2)
+					except Exception as ex:
+						print('Ошибка, пропускаю группу...', ex)
+				print("Ожидание новой группы | Время ожидания 25 секунд")
+				vk.groups.leave(group_id=group_id)
+				time.sleep(25)
+			
+	else:
+		pass
+	menu(vk)
+
+# прекольны пост мне нрав | ого чисто яя | да бывааает))
 def func_parsing(vk, group_id):
 	
 	while True:
@@ -418,62 +485,63 @@ def func_parsing(vk, group_id):
 		for user_id in ids:
 			f.write(f'{user_id}\n')
 	
-	menu(vk, (banned, applied))
+	
+	menu(vk, (banned, applied, ids))
 
 
 def id_link(vk, menu_start):
+	os.system('cls')
 	if menu_start == 1:  # рассылка
-		user_group = input(
-			'Вы хотите сделать рассылку в:\n\n1 - В личку пользователям\n2 - В  личные сообщения  группам\n\nВведите цифру:'
-			)
-		user_group = int(user_group)
+		user_group = int(input(
+			'Вы хотите сделать рассылку\n\n1 - В личку пользователям\n2 - В личные сообщения группам\n3 - Под '
+			'последнии 10 постов группы'
+			'\n\nВведите цифру:'
+			))
 		
 		if user_group == 2:
-			group_list = open("link_group.txt", 'r')
 			os.system('cls')
 			print('Преобразуем ссылки в id\n\nПожалуйста подождите...')
 			list_id_group = []  # айди группы преобразованные из ссылки
 			
-			for group_id_info in group_list:
-				try:
-					print(f'Ссылка: {group_id_info}')
-					link_replace = group_id_info.replace('https://vk.com/', '')
-					
-					# Получение id по короткому имени сообщества
-					group_info = vk.utils.resolveScreenName(screen_name=link_replace)
-					group_id = group_info['object_id']
-					
-					# Получение информации о сообществе
-					group = vk.groups.getById(group_id=group_id)
-					
-					group_all_info = group[0]  # выводит всю информацию о группе
-					group_id = group_all_info['id']  # выводит айди
-					print(f'Айди группы: {group_id}')
-					list_id_group.append(group_id)
-				# print(group_id)
-				
-				except Exception as e:
-					print(f'произошла ошибка {e}, пропускаю группу...')
-					continue
+			with open('link_group.txt', 'r') as group_list:
+				for link in group_list:
+					try:
+						group_id = get_group_id_by_link(vk, link)
+						print(f'Айди группы: {group_id:>12} | Ссылка: {link}')
+						list_id_group.append(group_id)
+					except Exception as e:
+						print(f'произошла ошибка {e}, пропускаю группу...')
 			message_group(vk, list_id_group)
 		
 		if user_group == 1:  # по лс юзерам
 			os.system('cls')
 			print('Преобразуем ссылки в id\n\nПожалуйста подождите...')
 			id_user_all = []
-			link_user = open('link_user.txt', 'r')
-			for l_u in link_user:
-				try:
-					l_u = l_u.replace('https://vk.com/', '')
-					user = vk.users.get(user_ids=l_u)
-					print(user[0]['id'])
-					id_user = user[0]['id']
-					id_user_all.append(id_user)
-				
-				except Exception as e:
-					print(f'произошла ошибка {e}, пропускаю пользователя...')
-					continue
-			func_message_send(vk, id_user_all)
+			with open('link_user.txt', 'r') as user_list:
+				for id in user_list:
+					try:
+						group_id = int(id[:-2])
+						print(f'Айди участника: {group_id:>12} | Ссылка: https://vk.com/id{id}')
+						id_user_all.append(group_id)
+					except Exception as e:
+						print(f'произошла ошибка {e}, пропускаю пользователя...')
+				func_message_send(vk, id_user_all)
+		
+		if user_group == 3:
+			os.system('cls')
+			print('Преобразуем ссылки в id\n\nПожалуйста подождите...')
+			list_links_ids_group = []  # айди группы преобразованные из ссылки
+			
+			with open('link_group.txt', 'r') as group_list:
+				for link in group_list:
+					try:
+						group_id = get_group_id_by_link(vk, link)
+						print(f'Айди группы: {group_id:>12} | Ссылка: {link[:-2]}')
+						list_links_ids_group.append((link, group_id))
+					except Exception as e:
+						print(f'произошла ошибка {e}, пропускаю группу...')
+			message_group_comments(vk, list_links_ids_group)
+			
 	
 	if menu_start == 2:  # парсинг
 		os.system('cls')
@@ -508,6 +576,11 @@ def menu(vk, last_pars=None):
 	if last_pars is not None:
 		print(f'Забанненых аккаунтов: {last_pars[0]}')
 		print(f'Всего спаршенных: {last_pars[1]}')
+		count_of_link_users = int(input("\nВведите сколько человек вы хотите сохранить для рассылки:"))
+		
+		with open('link_user.txt.txt', 'a') as f:
+			for user_id in last_pars[2][:count_of_link_users]:
+				f.write(f'{user_id}\n')
 	console = Console()
 	console.print("ПРОГРАММА ВКОНТАКТЕ", style="bold yellow", justify="center")
 	table = Table(title="\nФУНКЦИОНАЛ ПРОГРАММЫ")
@@ -515,10 +588,12 @@ def menu(vk, last_pars=None):
 	table.add_column("Название функции", style="sandy_brown")
 	table.add_column("Описание функции", justify="right", style="green")
 	table.add_row(
-		"1", "Рассылка", "\n1-Рассылка в  личные сообщения группе\n2 Рассылка в личку пользователям", end_section=True
+		"1", "Рассылка", "1 - Рассылка в личку пользователям\n2 - Рассылка в личные сообщения группе\n3 - Под "
+		                 "последнии 10 постов группы",
+		end_section=True
 		)
 	table.add_row(
-		"2", "Парсинг групп", "Парсинг групп\nИмеет два фильтра:\n1 - парсинг активных\n2 - парсинг всех участников",
+		"2", "Парсинг групп", "1 - Всех пользователей\n2 - Активных онлайн\n3 - По полу\n4 - По городу\n5 - По возрасту\n6 - Только с фото",
 		end_section=True
 		)
 	table.add_row("3", "Постинг на стену групп", "Оставляет запись на стенах групп", end_section=True)
